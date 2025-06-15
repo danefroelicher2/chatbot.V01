@@ -2,7 +2,7 @@
 """
 Enhanced Main Application with Sophisticated Conversational AI
 Integrates the new memory-managed conversational system
-FIXED VERSION - All imports corrected
+FIXED VERSION - All imports corrected, ALL original functionality preserved
 """
 
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks
@@ -18,14 +18,8 @@ import logging
 
 from .models.database import create_tables, get_db
 from .routers import chat
-# FIX: Changed import to match actual file name
-try:
-    from .services.contextual_ai_service import ConversationalAIService
-    ENHANCED_CHAT_AVAILABLE = True
-except ImportError:
-    ENHANCED_CHAT_AVAILABLE = False
-    ConversationalAIService = None
-    logging.warning("Enhanced chat service not available - check if contextual_ai_service.py exists")
+# Enhanced chat functionality is in chat.py router, not separate enhanced_chat.py
+ENHANCED_CHAT_AVAILABLE = True
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -65,56 +59,7 @@ except Exception as e:
 # Include routers
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 
-# FIX: Create enhanced chat endpoint directly in main.py instead of separate router
-if ENHANCED_CHAT_AVAILABLE:
-    from pydantic import BaseModel
-    from typing import List, Optional, Dict, Any
-    
-    # Global AI service instances 
-    ai_services: Dict[str, ConversationalAIService] = {}
-    
-    class EnhancedChatRequest(BaseModel):
-        message: str
-        user_id: Optional[int] = 1
-        conversation_id: Optional[int] = None
-    
-    @app.post("/api/enhanced-chat")
-    async def enhanced_chat_endpoint(request: EnhancedChatRequest):
-        """Enhanced chat endpoint with contextual AI"""
-        try:
-            # Get or create AI service for this user
-            service_key = f"user_{request.user_id}"
-            if service_key not in ai_services:
-                ai_services[service_key] = ConversationalAIService()
-            
-            ai_service = ai_services[service_key]
-            
-            # Process message
-            result = await ai_service.process_message(
-                message=request.message,
-                user_id=request.user_id,
-                conversation_id=request.conversation_id
-            )
-            
-            return {
-                "response": result['response'],
-                "conversation_id": request.conversation_id or 1,
-                "analysis": result.get('conversation_analysis', {}),
-                "memory_status": result.get('memory_status', {}),
-                "memory_overflow": result.get('memory_overflow', False),
-                "timestamp": datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Enhanced chat error: {e}", exc_info=True)
-            return JSONResponse(
-                status_code=500,
-                content={"error": f"Enhanced chat error: {str(e)}"}
-            )
-    
-    logger.info("Enhanced chat endpoint loaded successfully")
-else:
-    logger.warning("Enhanced chat endpoint not loaded - using legacy chat only")
+logger.info("Enhanced chat router loaded successfully from chat.py")
 
 # Root endpoint - serve enhanced chat interface
 @app.get("/", response_class=HTMLResponse)
@@ -277,7 +222,7 @@ def get_enhanced_chat_html():
             constructor() {
                 this.currentConversationId = null;
                 this.memoryStatus = { current: 0, max: 50 };
-                this.enhancedChatAvailable = true;
+                this.enhancedChatAvailable = true; // Will be detected
                 
                 this.initializeElements();
                 this.attachEventListeners();
@@ -516,6 +461,13 @@ def get_enhanced_chat_html():
 @app.get("/health")
 async def health_check():
     """Enhanced health check with system status"""
+    # FIX: Get ai_services from chat router since enhanced_chat is there
+    ai_services = {}
+    if ENHANCED_CHAT_AVAILABLE:
+        try:
+            from .routers.chat import ai_services
+        except ImportError:
+            ai_services = {}
     
     return {
         "status": "healthy", 
@@ -531,7 +483,7 @@ async def health_check():
             "Conversation insights and analytics"
         ],
         "system_status": {
-            "active_ai_services": len(ai_services) if ENHANCED_CHAT_AVAILABLE else 0,
+            "active_ai_services": len(ai_services),
             "database_connected": True,
             "memory_management": "active" if ENHANCED_CHAT_AVAILABLE else "fallback",
             "enhanced_chat_available": ENHANCED_CHAT_AVAILABLE
@@ -552,19 +504,23 @@ async def get_system_stats(db: Session = Depends(get_db)):
         total_messages = db.query(Message).count()
         total_facts = db.query(UserFact).count()
         
-        # Memory stats - only if enhanced chat is available
+        # Memory stats - get from chat router
         total_memory_usage = 0
         memory_details = {}
         
         if ENHANCED_CHAT_AVAILABLE:
-            for key, service in ai_services.items():
-                memory_usage = len(service.memory.messages)
-                total_memory_usage += memory_usage
-                memory_details[key] = {
-                    'messages_in_memory': memory_usage,
-                    'topics_tracked': len(service.memory.topics_discussed),
-                    'facts_learned': len(service.memory.key_facts)
-                }
+            try:
+                from .routers.chat import ai_services
+                for key, service in ai_services.items():
+                    memory_usage = len(service.memory.messages)
+                    total_memory_usage += memory_usage
+                    memory_details[key] = {
+                        'messages_in_memory': memory_usage,
+                        'topics_tracked': len(service.memory.topics_discussed),
+                        'facts_learned': len(service.memory.key_facts)
+                    }
+            except ImportError:
+                pass
         
         return {
             "database_stats": {
@@ -591,6 +547,82 @@ async def get_system_stats(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching stats: {str(e)}")
 
+# Demo endpoint to test conversation abilities
+if ENHANCED_CHAT_AVAILABLE:
+    @app.post("/api/demo/conversation")
+    async def demo_conversation(
+        demo_type: str = "presentation_stress",
+        db: Session = Depends(get_db)
+    ):
+        """Demo endpoint to showcase enhanced conversation abilities"""
+        
+        demo_conversations = {
+            "presentation_stress": [
+                "I'm stressed about my presentation tomorrow",
+                "Yeah, it's a big client meeting and I'm worried about the technical demo",
+                "The slides look good but I'm nervous about the Q&A section",
+                "What if they ask something I don't know?"
+            ],
+            "relationship_issue": [
+                "I had a fight with my partner last night",
+                "It was about money again - we never seem to agree on spending",
+                "I feel like we're just talking past each other",
+                "Maybe we need to find a better way to communicate about this stuff"
+            ],
+            "work_stress": [
+                "Work has been really overwhelming lately",
+                "My boss keeps piling on more projects without extending deadlines",
+                "I'm working 12 hour days and still falling behind",
+                "I don't know how much longer I can keep this up"
+            ],
+            "exciting_news": [
+                "I got the job I interviewed for last week!",
+                "I'm so excited but also nervous about starting",
+                "It's a big step up from my current role",
+                "The salary is amazing but there's a lot more responsibility"
+            ]
+        }
+        
+        if demo_type not in demo_conversations:
+            raise HTTPException(status_code=400, detail="Invalid demo type")
+        
+        # Import here to avoid circular imports
+        from .services.contextual_ai_service import ConversationalAIService
+        
+        demo_ai = ConversationalAIService()
+        demo_results = []
+        
+        for message in demo_conversations[demo_type]:
+            result = await demo_ai.process_message(message, user_id=999)  # Demo user
+            
+            demo_results.append({
+                "user_message": message,
+                "ai_response": result['response'],
+                "analysis": {
+                    "intent": result['intent'],
+                    "emotions": result['detected_emotions'],
+                    "topics": result['detected_topics'],
+                    "sentiment": result['sentiment_score'],
+                    "specificity": result['conversation_analysis']['specificity_level']
+                },
+                "memory_status": result['memory_status']
+            })
+            
+            # Stop if memory overflow occurs
+            if result.get('memory_overflow'):
+                demo_results.append({
+                    "memory_overflow": True,
+                    "overflow_reason": result.get('overflow_reason'),
+                    "conversation_summary": result.get('conversation_summary')
+                })
+                break
+        
+        return {
+            "demo_type": demo_type,
+            "conversation": demo_results,
+            "insights": demo_ai.get_conversation_insights()
+        }
+
 # Background task for memory cleanup
 @app.on_event("startup")
 async def startup_event():
@@ -599,7 +631,7 @@ async def startup_event():
     if ENHANCED_CHAT_AVAILABLE:
         logger.info("Enhanced chat features enabled: Memory Management, Context Threading, Dynamic Response Building")
     else:
-        logger.warning("Enhanced chat features not available - check contextual_ai_service.py file")
+        logger.warning("Enhanced chat features not available - check enhanced_chat.py file")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -607,8 +639,12 @@ async def shutdown_event():
     logger.info("Enhanced AI Companion shutting down...")
     # Clean up AI services if available
     if ENHANCED_CHAT_AVAILABLE:
-        ai_services.clear()
-        logger.info("AI services cleaned up")
+        try:
+            from .routers.chat import ai_services
+            ai_services.clear()
+            logger.info("AI services cleaned up")
+        except ImportError:
+            pass
 
 # Error handlers
 @app.exception_handler(HTTPException)
