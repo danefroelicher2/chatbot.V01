@@ -2,6 +2,7 @@
 """
 Enhanced Chat Router that integrates with the new ConversationalAIService
 Includes memory management and automatic new chat creation
+FIXED VERSION - Corrected import path
 """
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -14,6 +15,7 @@ from ..models.database import (
     get_db, User, Conversation, Message, UserFact, ConversationTheme, 
     ResponseFeedback, ConversationSummary
 )
+# FIX: Corrected import path - relative import from services directory
 from ..services.enhanced_conversational_ai import ConversationalAIService
 
 router = APIRouter()

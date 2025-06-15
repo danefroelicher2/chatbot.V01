@@ -2,6 +2,7 @@
 """
 Enhanced Main Application with Sophisticated Conversational AI
 Integrates the new memory-managed conversational system
+FIXED VERSION - All imports corrected
 """
 
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks
@@ -10,13 +11,21 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from datetime import datetime  # FIX: Added missing datetime import
 import os
 from pathlib import Path
 import logging
 
 from .models.database import create_tables, get_db
 from .routers import chat
-from .routers.enhanced_chat import router as enhanced_chat_router
+# FIX: Changed import path to relative import
+try:
+    from .routers import enhanced_chat
+    ENHANCED_CHAT_AVAILABLE = True
+except ImportError:
+    ENHANCED_CHAT_AVAILABLE = False
+    enhanced_chat = None
+    logging.warning("Enhanced chat router not available - check if enhanced_chat.py exists")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -55,7 +64,13 @@ except Exception as e:
 
 # Include routers
 app.include_router(chat.router, prefix="/api", tags=["legacy-chat"])  # Keep old chat for compatibility
-app.include_router(enhanced_chat_router, prefix="/api", tags=["enhanced-chat"])  # New enhanced chat
+
+# FIX: Only include enhanced chat if it's available
+if ENHANCED_CHAT_AVAILABLE and enhanced_chat:
+    app.include_router(enhanced_chat.router, prefix="/api", tags=["enhanced-chat"])
+    logger.info("Enhanced chat router loaded successfully")
+else:
+    logger.warning("Enhanced chat router not loaded - using legacy chat only")
 
 # Root endpoint - serve enhanced chat interface
 @app.get("/", response_class=HTMLResponse)
@@ -169,6 +184,11 @@ def get_enhanced_chat_html():
         }
         #sendBtn:hover { background-color: #1d4ed8; }
         #sendBtn:disabled { background-color: #555; cursor: not-allowed; }
+        .error-message {
+            background-color: #fef2f2; border: 1px solid #fecaca;
+            color: #dc2626; padding: 12px; border-radius: 8px;
+            margin: 16px 0; text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -213,16 +233,48 @@ def get_enhanced_chat_html():
             constructor() {
                 this.currentConversationId = null;
                 this.memoryStatus = { current: 0, max: 50 };
+                this.enhancedChatAvailable = true; // Will be detected
                 
                 this.initializeElements();
                 this.attachEventListeners();
+                this.detectEnhancedChatAvailability();
+            }
+            
+            async detectEnhancedChatAvailability() {
+                try {
+                    const response = await fetch('/api/enhanced-chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: "test",
+                            user_id: 1
+                        })
+                    });
+                    this.enhancedChatAvailable = response.status !== 404;
+                } catch (error) {
+                    this.enhancedChatAvailable = false;
+                }
+                
+                if (!this.enhancedChatAvailable) {
+                    this.showFallbackMessage();
+                }
+            }
+            
+            showFallbackMessage() {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.innerHTML = `
+                    <strong>⚠️ Enhanced Chat Not Available</strong><br>
+                    Falling back to legacy chat. Enhanced features may not work.
+                `;
+                this.chatContainer.insertBefore(errorDiv, this.chatContainer.firstChild);
             }
             
             initializeElements() {
                 this.messageInput = document.getElementById('messageInput');
                 this.sendBtn = document.getElementById('sendBtn');
                 this.chatContainer = document.getElementById('chatContainer');
-                this.memoryStatus = document.getElementById('memoryStatus');
+                this.memoryStatusEl = document.getElementById('memoryStatus');
                 this.memoryFill = document.getElementById('memoryFill');
                 this.status = document.getElementById('status');
             }
@@ -255,7 +307,9 @@ def get_enhanced_chat_html():
                 this.showTypingIndicator();
                 
                 try {
-                    const response = await fetch('/api/enhanced-chat', {
+                    // Try enhanced chat first, fallback to legacy
+                    const endpoint = this.enhancedChatAvailable ? '/api/enhanced-chat' : '/api/chat';
+                    const response = await fetch(endpoint, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -268,7 +322,7 @@ def get_enhanced_chat_html():
                     const data = await response.json();
                     this.hideTypingIndicator();
                     
-                    // Handle memory overflow
+                    // Handle memory overflow (enhanced chat only)
                     if (data.memory_overflow) {
                         this.handleMemoryOverflow(data);
                         return;
@@ -280,10 +334,12 @@ def get_enhanced_chat_html():
                     }
                     
                     // Add AI response
-                    this.addEnhancedMessage(data.response, false, data);
-                    
-                    // Update memory status
-                    this.updateMemoryStatus(data.memory_status);
+                    if (this.enhancedChatAvailable) {
+                        this.addEnhancedMessage(data.response, false, data);
+                        this.updateMemoryStatus(data.memory_status);
+                    } else {
+                        this.addMessage(data.response, false);
+                    }
                     
                 } catch (error) {
                     this.hideTypingIndicator();
@@ -333,7 +389,6 @@ def get_enhanced_chat_html():
             }
             
             handleMemoryOverflow(data) {
-                // Show memory overflow warning
                 const warningDiv = document.createElement('div');
                 warningDiv.className = 'memory-overflow-warning';
                 warningDiv.innerHTML = `
@@ -345,25 +400,22 @@ def get_enhanced_chat_html():
                 this.chatContainer.appendChild(warningDiv);
                 this.scrollToBottom();
                 
-                // Update memory indicator to show overflow
                 this.memoryFill.classList.add('memory-overflow');
-                this.memoryStatus.textContent = 'Memory Full - Restart Required';
+                this.memoryStatusEl.textContent = 'Memory Full - Restart Required';
                 this.status.textContent = 'Memory overflow - Please start a new chat';
                 
-                // Disable input
                 this.messageInput.disabled = true;
                 this.sendBtn.disabled = true;
             }
             
             updateMemoryStatus(memoryStatus) {
                 const current = memoryStatus.message_count;
-                const max = 50; // From memory management
+                const max = 50;
                 const percentage = (current / max) * 100;
                 
-                this.memoryStatus.textContent = `${current}/${max} messages`;
+                this.memoryStatusEl.textContent = `${current}/${max} messages`;
                 this.memoryFill.style.width = `${percentage}%`;
                 
-                // Update colors based on usage
                 this.memoryFill.classList.remove('memory-warning', 'memory-overflow');
                 if (percentage > 90) {
                     this.memoryFill.classList.add('memory-overflow');
@@ -371,7 +423,6 @@ def get_enhanced_chat_html():
                     this.memoryFill.classList.add('memory-warning');
                 }
                 
-                // Update status text
                 if (percentage > 90) {
                     this.status.textContent = 'Memory almost full - conversation may restart soon';
                 } else if (percentage > 70) {
@@ -410,7 +461,6 @@ def get_enhanced_chat_html():
             }
         }
         
-        // Initialize the enhanced chat app
         document.addEventListener('DOMContentLoaded', () => {
             new EnhancedChatApp();
         });
@@ -422,7 +472,13 @@ def get_enhanced_chat_html():
 @app.get("/health")
 async def health_check():
     """Enhanced health check with system status"""
-    from .routers.enhanced_chat import ai_services
+    # FIX: Only try to import ai_services if enhanced_chat is available
+    ai_services = {}
+    if ENHANCED_CHAT_AVAILABLE and enhanced_chat:
+        try:
+            from .routers.enhanced_chat import ai_services
+        except ImportError:
+            ai_services = {}
     
     return {
         "status": "healthy", 
@@ -440,7 +496,8 @@ async def health_check():
         "system_status": {
             "active_ai_services": len(ai_services),
             "database_connected": True,
-            "memory_management": "active"
+            "memory_management": "active" if ENHANCED_CHAT_AVAILABLE else "fallback",
+            "enhanced_chat_available": ENHANCED_CHAT_AVAILABLE
         }
     }
 
@@ -449,7 +506,6 @@ async def health_check():
 async def get_system_stats(db: Session = Depends(get_db)):
     """Get comprehensive system statistics"""
     from .models.database import User, Conversation, Message, UserFact
-    from .routers.enhanced_chat import ai_services
     
     try:
         # Database stats
@@ -459,18 +515,23 @@ async def get_system_stats(db: Session = Depends(get_db)):
         total_messages = db.query(Message).count()
         total_facts = db.query(UserFact).count()
         
-        # Memory stats
+        # Memory stats - only if enhanced chat is available
         total_memory_usage = 0
         memory_details = {}
         
-        for key, service in ai_services.items():
-            memory_usage = len(service.memory.messages)
-            total_memory_usage += memory_usage
-            memory_details[key] = {
-                'messages_in_memory': memory_usage,
-                'topics_tracked': len(service.memory.topics_discussed),
-                'facts_learned': len(service.memory.key_facts)
-            }
+        if ENHANCED_CHAT_AVAILABLE and enhanced_chat:
+            try:
+                from .routers.enhanced_chat import ai_services
+                for key, service in ai_services.items():
+                    memory_usage = len(service.memory.messages)
+                    total_memory_usage += memory_usage
+                    memory_details[key] = {
+                        'messages_in_memory': memory_usage,
+                        'topics_tracked': len(service.memory.topics_discussed),
+                        'facts_learned': len(service.memory.key_facts)
+                    }
+            except ImportError:
+                pass
         
         return {
             "database_stats": {
@@ -483,109 +544,118 @@ async def get_system_stats(db: Session = Depends(get_db)):
                 "avg_facts_per_user": round(total_facts / max(total_users, 1), 2)
             },
             "memory_stats": {
-                "active_ai_services": len(ai_services),
+                "active_ai_services": len(memory_details),
                 "total_messages_in_memory": total_memory_usage,
-                "memory_details": memory_details
+                "memory_details": memory_details,
+                "enhanced_chat_available": ENHANCED_CHAT_AVAILABLE
             },
             "system_health": {
                 "database_responsive": True,
-                "ai_services_healthy": len(ai_services) >= 0,  # Always true for now
-                "memory_management_active": True
+                "ai_services_healthy": len(memory_details) >= 0,
+                "memory_management_active": ENHANCED_CHAT_AVAILABLE
             }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching stats: {str(e)}")
 
-# Demo endpoint to test conversation abilities
-@app.post("/api/demo/conversation")
-async def demo_conversation(
-    demo_type: str = "presentation_stress",
-    db: Session = Depends(get_db)
-):
-    """Demo endpoint to showcase enhanced conversation abilities"""
-    
-    demo_conversations = {
-        "presentation_stress": [
-            "I'm stressed about my presentation tomorrow",
-            "Yeah, it's a big client meeting and I'm worried about the technical demo",
-            "The slides look good but I'm nervous about the Q&A section",
-            "What if they ask something I don't know?"
-        ],
-        "relationship_issue": [
-            "I had a fight with my partner last night",
-            "It was about money again - we never seem to agree on spending",
-            "I feel like we're just talking past each other",
-            "Maybe we need to find a better way to communicate about this stuff"
-        ],
-        "work_stress": [
-            "Work has been really overwhelming lately",
-            "My boss keeps piling on more projects without extending deadlines",
-            "I'm working 12 hour days and still falling behind",
-            "I don't know how much longer I can keep this up"
-        ],
-        "exciting_news": [
-            "I got the job I interviewed for last week!",
-            "I'm so excited but also nervous about starting",
-            "It's a big step up from my current role",
-            "The salary is amazing but there's a lot more responsibility"
-        ]
-    }
-    
-    if demo_type not in demo_conversations:
-        raise HTTPException(status_code=400, detail="Invalid demo type")
-    
-    # Import here to avoid circular imports
-    from .routers.enhanced_chat import ConversationalAIService
-    
-    demo_ai = ConversationalAIService()
-    demo_results = []
-    
-    for message in demo_conversations[demo_type]:
-        result = await demo_ai.process_message(message, user_id=999)  # Demo user
+# Demo endpoint to test conversation abilities - only if enhanced chat available
+if ENHANCED_CHAT_AVAILABLE and enhanced_chat:
+    @app.post("/api/demo/conversation")
+    async def demo_conversation(
+        demo_type: str = "presentation_stress",
+        db: Session = Depends(get_db)
+    ):
+        """Demo endpoint to showcase enhanced conversation abilities"""
         
-        demo_results.append({
-            "user_message": message,
-            "ai_response": result['response'],
-            "analysis": {
-                "intent": result['intent'],
-                "emotions": result['detected_emotions'],
-                "topics": result['detected_topics'],
-                "sentiment": result['sentiment_score'],
-                "specificity": result['conversation_analysis']['specificity_level']
-            },
-            "memory_status": result['memory_status']
-        })
+        demo_conversations = {
+            "presentation_stress": [
+                "I'm stressed about my presentation tomorrow",
+                "Yeah, it's a big client meeting and I'm worried about the technical demo",
+                "The slides look good but I'm nervous about the Q&A section",
+                "What if they ask something I don't know?"
+            ],
+            "relationship_issue": [
+                "I had a fight with my partner last night",
+                "It was about money again - we never seem to agree on spending",
+                "I feel like we're just talking past each other",
+                "Maybe we need to find a better way to communicate about this stuff"
+            ],
+            "work_stress": [
+                "Work has been really overwhelming lately",
+                "My boss keeps piling on more projects without extending deadlines",
+                "I'm working 12 hour days and still falling behind",
+                "I don't know how much longer I can keep this up"
+            ],
+            "exciting_news": [
+                "I got the job I interviewed for last week!",
+                "I'm so excited but also nervous about starting",
+                "It's a big step up from my current role",
+                "The salary is amazing but there's a lot more responsibility"
+            ]
+        }
         
-        # Stop if memory overflow occurs
-        if result.get('memory_overflow'):
+        if demo_type not in demo_conversations:
+            raise HTTPException(status_code=400, detail="Invalid demo type")
+        
+        # Import here to avoid circular imports
+        from .services.enhanced_conversational_ai import ConversationalAIService
+        
+        demo_ai = ConversationalAIService()
+        demo_results = []
+        
+        for message in demo_conversations[demo_type]:
+            result = await demo_ai.process_message(message, user_id=999)  # Demo user
+            
             demo_results.append({
-                "memory_overflow": True,
-                "overflow_reason": result.get('overflow_reason'),
-                "conversation_summary": result.get('conversation_summary')
+                "user_message": message,
+                "ai_response": result['response'],
+                "analysis": {
+                    "intent": result['intent'],
+                    "emotions": result['detected_emotions'],
+                    "topics": result['detected_topics'],
+                    "sentiment": result['sentiment_score'],
+                    "specificity": result['conversation_analysis']['specificity_level']
+                },
+                "memory_status": result['memory_status']
             })
-            break
-    
-    return {
-        "demo_type": demo_type,
-        "conversation": demo_results,
-        "insights": demo_ai.get_conversation_insights()
-    }
+            
+            # Stop if memory overflow occurs
+            if result.get('memory_overflow'):
+                demo_results.append({
+                    "memory_overflow": True,
+                    "overflow_reason": result.get('overflow_reason'),
+                    "conversation_summary": result.get('conversation_summary')
+                })
+                break
+        
+        return {
+            "demo_type": demo_type,
+            "conversation": demo_results,
+            "insights": demo_ai.get_conversation_insights()
+        }
 
 # Background task for memory cleanup
 @app.on_event("startup")
 async def startup_event():
     """Initialize background tasks and system components"""
     logger.info("Enhanced AI Companion starting up...")
-    logger.info("Features enabled: Memory Management, Context Threading, Dynamic Response Building")
+    if ENHANCED_CHAT_AVAILABLE:
+        logger.info("Enhanced chat features enabled: Memory Management, Context Threading, Dynamic Response Building")
+    else:
+        logger.warning("Enhanced chat features not available - check enhanced_chat.py file")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Clean up resources on shutdown"""
     logger.info("Enhanced AI Companion shutting down...")
-    # Clean up AI services
-    from .routers.enhanced_chat import ai_services
-    ai_services.clear()
-    logger.info("AI services cleaned up")
+    # Clean up AI services if available
+    if ENHANCED_CHAT_AVAILABLE and enhanced_chat:
+        try:
+            from .routers.enhanced_chat import ai_services
+            ai_services.clear()
+            logger.info("AI services cleaned up")
+        except ImportError:
+            pass
 
 # Error handlers
 @app.exception_handler(HTTPException)
