@@ -1870,7 +1870,7 @@ async function prepare(targetDoc, templateDoc) {
 
           targFix = targetSegmentFixs.at(index)
 
-          // NEWWW: Calculate the rank offset based on existing products on this fixture - Ensures rank.x works properly across multiple fixtures
+          // NEWWW: Ensures rank.x works properly across multiple fixtures
           const existingPositionsOnFixture = pog.positions.filter(p =>
             p.parent && p.parent.fixtureLeftMost.uuid === targFix.fixtureLeftMost.uuid
           );
