@@ -1412,49 +1412,75 @@ async function prepare(targetDoc, templateDoc) {
   posits = pog.positions
   fixs = pog.fixtures
 
+  //NEWWWWWWW
+  // Logs segment counts for template and target and returns a summary object
+  function logSegmentCounts(templatePOG, targetPOG) {
+    const getCount = (segs) => {
+      if (!segs) return 0;
+      if (typeof segs.size === 'number') return segs.size;
+      if (typeof segs.length === 'number') return segs.length;
+      try { return Array.from(segs).length; } catch (e) { return 0; }
+    };
 
-  //NEWWWW - Name target segments based on CURRENT products' desc 37 values (before orphaning)
+    const templateCount = getCount(templatePOG?.segments);
+    const targetCount = getCount(targetPOG?.segments);
+    const difference = targetCount - templateCount;
+
+    console.log("Segment Counts:");
+    console.log(`Template segment count: ${templateCount}`);
+    console.log(`Target segment count: ${targetCount}`);
+    console.log(`Segment difference: (target - template) = ${difference}`);
+
+    return { templateCount, targetCount, difference };
+  }
+
+  // Log segment counts early for visibility
+  logSegmentCounts(templatePOG, pog);
+
+
+  //NEWWWW - Name target segments based on TEMPLATE segments' names/desc37 (before orphaning)
   function nameTargetSegmentsFromCurrentProducts() {
-    console.log("Naming target segments based on current products' desc 37 values...");
+    console.log("Naming target segments based on template desc 37 values...");
 
-    // Get all segments sorted left to right
-    const segments = Array.from(pog.segments).sort((a, b) => a.uiX - b.uiX);
+    const getCount = (segs) => {
+      if (!segs) return 0;
+      if (typeof segs.length === 'number') return segs.length;
+      if (typeof segs.size === 'number') return segs.size;
+      try { return Array.from(segs).length; } catch (e) { return 0; }
+    };
 
-    for (let segment of segments) {
-      // Find positions CURRENTLY in this segment (before any orphaning)
-      const positionsInSegment = Array.from(pog.positions).filter(pos =>
-        pos.parent && pos.segment === segment
-      );
+    const templateSegments = Array.from(templatePOG.segments).sort((a, b) => a.uiX - b.uiX);
+    const targetSegments = Array.from(pog.segments).sort((a, b) => a.uiX - b.uiX);
 
-      if (positionsInSegment.length > 0) {
-        // Get desc 37 from first position
-        const desc37Value = positionsInSegment[0].product.data.performanceDesc.get(37);
+    const count = Math.min(templateSegments.length, targetSegments.length);
+    for (let i = 0; i < count; i++) {
+      const tSeg = templateSegments[i];
+      const targetSeg = targetSegments[i];
 
-        // Validate all positions have same desc 37
-        const allMatch = positionsInSegment.every(pos =>
-          pos.product.data.performanceDesc.get(37) === desc37Value
-        );
-
-        if (allMatch) {
-          segment.name = desc37Value;
-          console.log(`  Segment at X=${segment.uiX.toFixed(3)} named: "${desc37Value}" (${positionsInSegment.length} products)`);
-        } else {
-          // Use most common desc 37 if there's a mismatch
-          const desc37Counts = positionsInSegment.reduce((acc, pos) => {
-            const val = pos.product.data.performanceDesc.get(37);
-            acc[val] = (acc[val] || 0) + 1;
+      // Prefer template segment name; fallback to most common desc37 from positions in that template segment
+      let templateName = tSeg?.name;
+      if (!templateName || templateName === "") {
+        const templatePositionsInSeg = Array.from(templatePOG.positions).filter(pos => pos.parent && pos.segment === tSeg);
+        if (templatePositionsInSeg.length > 0) {
+          const desc37Counts = templatePositionsInSeg.reduce((acc, pos) => {
+            const val = pos.product?.data?.performanceDesc?.get(37);
+            if (val !== undefined && val !== null) acc[val] = (acc[val] || 0) + 1;
             return acc;
           }, {});
-          const mostCommon = Object.keys(desc37Counts).reduce((a, b) =>
-            desc37Counts[a] > desc37Counts[b] ? a : b
-          );
-          segment.name = mostCommon;
-          console.warn(`  WARNING: Segment at X=${segment.uiX.toFixed(3)} has mixed desc 37 values! Using most common: "${mostCommon}"`);
-          console.log(`    Breakdown:`, desc37Counts);
+          const keys = Object.keys(desc37Counts);
+          if (keys.length > 0) {
+            templateName = keys.reduce((a, b) => desc37Counts[a] > desc37Counts[b] ? a : b);
+          }
         }
-      } else {
-        console.warn(`  WARNING: Segment at X=${segment.uiX.toFixed(3)} has no products!`);
       }
+
+      if (!templateName || templateName === "") templateName = "UNNAMED";
+      targetSeg.name = templateName;
+      console.log(`Segment ${i + 1}: copied name "${templateName}" from template`);
+    }
+
+    if (targetSegments.length > templateSegments.length) {
+      console.log(`Skipping ${targetSegments.length - templateSegments.length} extra target segment(s) beyond template.`);
     }
 
     console.log("Segment naming complete.\n");
@@ -1480,9 +1506,7 @@ async function prepare(targetDoc, templateDoc) {
     return r
   }
 
-  //newwwwwwwwwwwwww
-  nameTargetSegmentsFromCurrentProducts();
-  await sleep(100);
+  //newwwwwwwwwwwwww (redundant second call removed)
 
   // Copy target names to template so they match
   function syncTemplateSegmentNames() {
