@@ -1438,7 +1438,10 @@ async function prepare(targetDoc, templateDoc) {
   logSegmentCounts(templatePOG, pog);
 
 
-  //NEWWWW - Name target segments based on TEMPLATE segments' names/desc37 (before orphaning)
+
+
+
+  //Name target segments based on TEMPLATE segments' names/desc37 (before orphaning)
   function nameTargetSegmentsFromCurrentProducts() {
     console.log("Naming target segments based on template desc 37 values...");
 
@@ -1488,25 +1491,21 @@ async function prepare(targetDoc, templateDoc) {
 
   nameTargetSegmentsFromCurrentProducts();
   await sleep(100);
-  //endNEWWWWWWWW
 
-  //NEWWWWW - Log product locations BEFORE any changes
+
+
+
+
+  // Log product locations BEFORE any changes
   const beforeSnapshot = logAllProductLocationsByGroups(targetDoc, "BEFORE ORPHANING - Initial Product Locations");
   targetDoc._beforeSnapshot = beforeSnapshot;
   await sleep(500);
-  //endNEWWWWWWWW
-
-  // desc37sInTarget = pog.data.desc.get(40)
-
-  // desc37Groupings = pog.data.desc.get(40).split(";")
 
   specialGet = (a, key) => {
     let [keyA, keyB] = key.split(":");
     r = keyB ? _.get(a, keyA).get(keyB) : _.get(a, key)
     return r
   }
-
-  //newwwwwwwwwwwwww (redundant second call removed)
 
   // Copy target names to template so they match
   function syncTemplateSegmentNames() {
@@ -1520,13 +1519,19 @@ async function prepare(targetDoc, templateDoc) {
 
   syncTemplateSegmentNames();
   await sleep(100);
-  //newwwwwwwwwwwwwwwwwww
 
-  // let mvmtOverrideFileRaw = await getDataFromFile("5198f1d5-b53b-4959-8acd-e21aad3c276c");
-  // await sleep(50)
 
-  // let mvmtOverrideFileStringed = JSON.stringify(mvmtOverrideFileRaw, null)
-  // let mvmtOverrideFile = JSON.parse(mvmtOverrideFileStringed)
+
+
+
+  //endnewwwwwwwwwwwwwwwwwww
+
+
+
+
+
+
+
 
   let kcmsDataFull = await getDataFromFile("98c30609-842c-4101-81fd-8e553cd06918");
   await sleep(25)
@@ -2228,7 +2233,6 @@ scoringFn = pos => {
     parseFloat(pos.upc) / 50000000000000
   );
 };
-
 
 const optCache = {
   mapSG: new Map(),
