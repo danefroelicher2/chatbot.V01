@@ -490,6 +490,53 @@ async function loadDoc(targetFileUuid) {
   return doc;
 }
 
+//here!!
+function calculateAvgDOSByDesc37(pog) {
+  console.log("\n===== Average DOS by Desc37 Group =====");
+  
+  // Group products by desc37, tracking unique UPCs
+  const groupedByDesc37 = {};
+  
+  for (let pos of pog.positions) {
+    const desc37 = pos.product?.data?.performanceDesc?.get(37);
+    if (!desc37) continue;
+    
+    const upc = pos.product.upc;
+    const dos = pos.planogramProduct?.calculatedFields?.actualDaysSupply ?? 0;
+
+          //  const dos = (movement > 0 && capacity > 0) ? (capacity / movement) * 7 : 999;
+    
+    // Initialize group if needed
+    if (!groupedByDesc37[desc37]) {
+      groupedByDesc37[desc37] = {};
+    }
+    
+    // Only count each UPC once per group (first occurrence wins)
+    if (!groupedByDesc37[desc37][upc]) {
+      groupedByDesc37[desc37][upc] = dos;
+    }
+  }
+  
+  // Calculate and display averages
+  const results = {};
+  for (let [desc37Group, upcs] of Object.entries(groupedByDesc37)) {
+    const upcList = Object.keys(upcs);
+    const totalDOS = Object.values(upcs).reduce((sum, dos) => sum + dos, 0);
+    const avgDOS = upcList.length > 0 ? totalDOS / upcList.length : 0;
+    
+    results[desc37Group] = {
+      avgDOS: avgDOS,
+      totalUPCs: upcList.length,
+      totalDOS: totalDOS
+    };
+    
+    console.log(`${desc37Group}: ${avgDOS.toFixed(2)} days (${upcList.length} unique UPCs)`);
+  }
+  console.log("=======================================\n");
+  
+  return results;
+}
+
 //newwwwwwwwwwwwwww
 // Used for BEFORE/AFTER snapshots. Not necessary for production, but helpful for debugging -- can be deleted
 //This function reads segment names to group alike segments together -- then logs products organized within each of these groups 
@@ -1392,9 +1439,6 @@ specialGetUtil = (a, key) => {
 //#endregion
 
 
-
-
-
 //#region PREPARE
 
 async function prepare(targetDoc, templateDoc) {
@@ -1436,9 +1480,6 @@ async function prepare(targetDoc, templateDoc) {
 
   // Log segment counts early for visibility
   logSegmentCounts(templatePOG, pog);
-
-
-
 
 
   //Name target segments based on TEMPLATE segments' names/desc37 (before orphaning)
@@ -1493,9 +1534,6 @@ async function prepare(targetDoc, templateDoc) {
   await sleep(100);
 
 
-
-
-
   // Log product locations BEFORE any changes
   const beforeSnapshot = logAllProductLocationsByGroups(targetDoc, "BEFORE ORPHANING - Initial Product Locations");
   targetDoc._beforeSnapshot = beforeSnapshot;
@@ -1519,11 +1557,6 @@ async function prepare(targetDoc, templateDoc) {
 
   syncTemplateSegmentNames();
   await sleep(100);
-
-
-
-
-
   //endnewwwwwwwwwwwwwwwwwww
 
 
@@ -1941,6 +1974,10 @@ async function prepare(targetDoc, templateDoc) {
   await waitForParent(pog)
   await waitForCalcFields(pog)
 
+  // Calculate average DOS by desc37 groups
+  const avgDOSResults = calculateAvgDOSByDesc37(pog);
+  
+
   // get posits (positions that we want to optimise)
   posits = pog.positions//.filter(z => !leavePosAlone(z))
 
@@ -2233,6 +2270,7 @@ scoringFn = pos => {
     parseFloat(pos.upc) / 50000000000000
   );
 };
+
 
 const optCache = {
   mapSG: new Map(),
