@@ -494,7 +494,7 @@ async function loadDoc(targetFileUuid) {
 function calculateAvgDOSByDesc37(pog) {
   console.log("\n===== Average DOS by Desc37 Group =====");
   
-  // Group products by desc37, tracking unique UPCs
+  // Group products by desc37, tracking unique UPCs with detailed info
   const groupedByDesc37 = {};
   
   for (let pos of pog.positions) {
@@ -502,9 +502,13 @@ function calculateAvgDOSByDesc37(pog) {
     if (!desc37) continue;
     
     const upc = pos.product.upc;
-    const dos = pos.planogramProduct?.calculatedFields?.actualDaysSupply ?? 0;
-
-          //  const dos = (movement > 0 && capacity > 0) ? (capacity / movement) * 7 : 999;
+    
+    // Calculate DOS using the correct formula: (capacity / movement) * 7
+    const movement = pos.product.data.performanceValue?.get(1) || 0;
+    const capacity = pos.planogramProduct?.calculatedFields?.capacity ||
+                     pos.capacity || 
+                     pos.product?.capacity || 0;
+    const dos = (movement > 0 && capacity > 0) ? (capacity / movement) * 7 : 999;
     
     // Initialize group if needed
     if (!groupedByDesc37[desc37]) {
@@ -512,16 +516,22 @@ function calculateAvgDOSByDesc37(pog) {
     }
     
     // Only count each UPC once per group (first occurrence wins)
+    // Store detailed info for verification
     if (!groupedByDesc37[desc37][upc]) {
-      groupedByDesc37[desc37][upc] = dos;
+      groupedByDesc37[desc37][upc] = {
+        dos: dos,
+        movement: movement,
+        capacity: capacity,
+        productName: pos.product.name || 'Unknown'
+      };
     }
   }
   
-  // Calculate and display averages
+  // Calculate and display averages with detailed UPC-level logging
   const results = {};
   for (let [desc37Group, upcs] of Object.entries(groupedByDesc37)) {
     const upcList = Object.keys(upcs);
-    const totalDOS = Object.values(upcs).reduce((sum, dos) => sum + dos, 0);
+    const totalDOS = Object.values(upcs).reduce((sum, info) => sum + info.dos, 0);
     const avgDOS = upcList.length > 0 ? totalDOS / upcList.length : 0;
     
     results[desc37Group] = {
@@ -530,9 +540,17 @@ function calculateAvgDOSByDesc37(pog) {
       totalDOS: totalDOS
     };
     
-    console.log(`${desc37Group}: ${avgDOS.toFixed(2)} days (${upcList.length} unique UPCs)`);
+    console.log(`\n--- ${desc37Group} ---`);
+    console.log(`Average DOS: ${avgDOS.toFixed(2)} days`);
+    console.log(`Total UPCs: ${upcList.length}`);
+    console.log(`\nDetailed UPC Breakdown:`);
+    
+    // Log each UPC with its DOS calculation details
+    for (let [upc, info] of Object.entries(upcs)) {
+      console.log(`  UPC ${upc}: DOS=${info.dos.toFixed(2)} (cap=${info.capacity}, mvmt=${info.movement.toFixed(2)}) - ${info.productName}`);
+    }
   }
-  console.log("=======================================\n");
+  console.log("\n=======================================\n");
   
   return results;
 }
