@@ -508,7 +508,7 @@ function calculateAvgDOSByDesc37(pog) {
     const capacity = pos.planogramProduct?.calculatedFields?.capacity ||
                      pos.capacity || 
                      pos.product?.capacity || 0;
-    const dos = (movement > 0 && capacity > 0) ? (capacity / movement) * 7 : 999;
+    const dos = (movement > 0 && capacity > 0) ? (capacity / movement) * 7 : 9.0;
     
     // Initialize group if needed
     if (!groupedByDesc37[desc37]) {
@@ -543,15 +543,8 @@ function calculateAvgDOSByDesc37(pog) {
     console.log(`\n--- ${desc37Group} ---`);
     console.log(`Average DOS: ${avgDOS.toFixed(2)} days`);
     console.log(`Total UPCs: ${upcList.length}`);
-    console.log(`\nDetailed UPC Breakdown:`);
-    
-    // Log each UPC with its DOS calculation details
-    for (let [upc, info] of Object.entries(upcs)) {
-      console.log(`  UPC ${upc}: DOS=${info.dos.toFixed(2)} (cap=${info.capacity}, mvmt=${info.movement.toFixed(2)}) - ${info.productName}`);
-    }
-  }
-  console.log("\n=======================================\n");
-  
+ 
+  }  
   return results;
 }
 
@@ -567,7 +560,7 @@ function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY
   const segments = Array.from(pog.segments).sort((a, b) => a.uiX - b.uiX);
 
   if (segments.length === 0) {
-    console.log("⚠️ No segments found");
+    console.log("âš ï¸ No segments found");
     return {};
   }
 
@@ -606,7 +599,7 @@ function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY
     }
   }
 
-  console.log(`\n🔍 Found ${segmentGroups.length} groups:`);
+  console.log(`\nðŸ” Found ${segmentGroups.length} groups:`);
   segmentGroups.forEach(group => {
     console.log(`   - ${group.name}: ${group.segments.length} segment(s)`);
   });
@@ -615,7 +608,7 @@ function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY
 
   // Step 3: Process each group
   segmentGroups.forEach((group, groupIndex) => {
-    console.log(`\n📦 GROUP: ${group.name} (${group.segments.length} segment${group.segments.length > 1 ? 's' : ''})`);
+    console.log(`\nðŸ“¦ GROUP: ${group.name} (${group.segments.length} segment${group.segments.length > 1 ? 's' : ''})`);
 
     // Get all fixtures from ALL segments in this group, organized by Y-level
     const fixturesByY = {};
@@ -1552,10 +1545,10 @@ async function prepare(targetDoc, templateDoc) {
   await sleep(100);
 
 
-  // Log product locations BEFORE any changes
-  const beforeSnapshot = logAllProductLocationsByGroups(targetDoc, "BEFORE ORPHANING - Initial Product Locations");
-  targetDoc._beforeSnapshot = beforeSnapshot;
-  await sleep(500);
+  // // Log product locations BEFORE any changes
+  // const beforeSnapshot = logAllProductLocationsByGroups(targetDoc, "BEFORE ORPHANING - Initial Product Locations");
+  // targetDoc._beforeSnapshot = beforeSnapshot;
+  // await sleep(500);
 
   specialGet = (a, key) => {
     let [keyA, keyB] = key.split(":");
@@ -1839,7 +1832,7 @@ async function prepare(targetDoc, templateDoc) {
           fix.canCombine = canCombineValue;
         }
 
-        console.log(`  ${segment.name} [${index + 1}/${groupSize}] → canCombine = ${canCombineValue}`);
+        console.log(`  ${segment.name} [${index + 1}/${groupSize}] â†’ canCombine = ${canCombineValue}`);
       });
     }
   }
