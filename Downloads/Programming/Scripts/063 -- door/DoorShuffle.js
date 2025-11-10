@@ -1567,7 +1567,6 @@ async function renameSegmentsWithExpansion() {
   console.log("  Segment re-naming complete.\n");
 }
 
-// NEW FUNCTION - Insert after renameSegmentsWithExpansion()
 async function relocateMismatchedProducts() {
   console.log("\n===== Relocating Mismatched Products =====");
   
@@ -1981,7 +1980,7 @@ await sleep(0)
 
   setCanCombineBySegmentGroups();
   await sleep(0);
-  //newwwwwwwwwwwwwwwww
+  //endnewwwwwwwwwwwwwwwww
 
   // place the positions based on the Temp
   function copyPosition(position, doc, fixture) {
@@ -2040,7 +2039,7 @@ await sleep(0)
         continue
       }
 
-      // NEWWW: Loop through each template segment and match to corresponding target segment
+      // NEWWWWWW: Loop through each template segment and match to corresponding target segment
       for (let i = 0; i < segments.length; i++) {
         let segment = segments[i]
         let targetSegment = targetSegments[i]
@@ -2061,7 +2060,7 @@ await sleep(0)
 
           targFix = targetSegmentFixs.at(index)
 
-          // NEWWW: Calculate the rank offset based on existing products on this fixture - Ensures rank.x works properly across multiple fixtures
+          // NEWWWWWWW: Calculate the rank offset based on existing products on this fixture - Ensures rank.x works properly across multiple fixtures
           const existingPositionsOnFixture = pog.positions.filter(p =>
             p.parent && p.parent.fixtureLeftMost.uuid === targFix.fixtureLeftMost.uuid
           );
@@ -2213,6 +2212,7 @@ await sleep(0)
   positionDataUpdate0()
   await sleep(200)
 
+//newwwwwwwwwwwwww
   console.log("\n===== Calculating Average DOS by Desc37 Group =====");
 const avgDOSResults = calculateAvgDOSByDesc37(pog);
 console.log("Average DOS calculation complete.\n");
@@ -2242,18 +2242,21 @@ console.log("Re-naming segments with expansion logic...");
 await renameSegmentsWithExpansion();
 await sleep(100);
 
-// 🔥 NEW: Re-apply canCombine settings after segment renaming
+// Re-apply canCombine settings after segment renaming
 console.log("Re-applying canCombine settings after segment renaming...");
 setCanCombineBySegmentGroups();
 await sleep(100);
 
-// 🔥 NEW: Relocate products that don't match their segment names
+// Relocate products that don't match their segment names
 await relocateMismatchedProducts();
 await sleep(100);
 
+//remove once finished
   const afterafterSnapshot = logAllProductLocationsByGroups(targetDoc, "AFTER ORPHANING - Product Locations After Placement");
   targetDoc._afterafterSnapshot = afterafterSnapshot;
   await sleep(500);
+
+  //endnewwwwwwwwwwwwwww
 
 
   function positionDataUpdate() {
