@@ -490,7 +490,7 @@ async function loadDoc(targetFileUuid) {
   return doc;
 }
 
-//here!!
+//newwwwwwwwwwww
 function calculateAvgDOSByDesc37(pog) {
   console.log("\n===== Average DOS by Desc37 Group =====");
 
@@ -548,7 +548,6 @@ function calculateAvgDOSByDesc37(pog) {
   return results;
 }
 
-//newwwwwwwwwwwwwww
 // Used for BEFORE/AFTER snapshots. Not necessary for production, but helpful for debugging -- can be deleted
 //This function reads segment names to group alike segments together -- then logs products organized within each of these groups 
 function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY GROUPS") {
@@ -687,7 +686,7 @@ function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY
   return snapshot;
 }
 
-//newwwwwwwwwwwwwwwwwwwww
+//endnewwwwwwwwwwwwwwwwwwwww
 
 // #region ALGO
 
@@ -1568,6 +1567,126 @@ async function renameSegmentsWithExpansion() {
   console.log("  Segment re-naming complete.\n");
 }
 
+// NEW FUNCTION - Insert after renameSegmentsWithExpansion()
+async function relocateMismatchedProducts() {
+  console.log("\n===== Relocating Mismatched Products =====");
+  
+  const segments = Array.from(pog.segments).sort((a, b) => a.uiX - b.uiX);
+  const allPositions = Array.from(pog.positions);
+  
+  // Group mismatched products by their desc37 AND their current fixture
+  const mismatchedByDesc37 = {};
+  
+  for (let pos of allPositions) {
+    const productDesc37 = pos.product?.data?.performanceDesc?.get(37);
+    if (!productDesc37) continue;
+    
+    const segmentName = pos.segment?.name;
+    
+    // Check if product's desc37 matches its current segment name
+    if (productDesc37 !== segmentName) {
+      if (!mismatchedByDesc37[productDesc37]) {
+        mismatchedByDesc37[productDesc37] = {};
+      }
+      
+      // Group by current fixture Y position to preserve fixture-level structure
+      const fixtureY = pos.fixture.position.y;
+      if (!mismatchedByDesc37[productDesc37][fixtureY]) {
+        mismatchedByDesc37[productDesc37][fixtureY] = [];
+      }
+      
+      mismatchedByDesc37[productDesc37][fixtureY].push(pos);
+    }
+  }
+  
+  // Process each mismatched desc37 group
+  for (let [desc37Value, fixtureGroups] of Object.entries(mismatchedByDesc37)) {
+    const totalProducts = Object.values(fixtureGroups).flat().length;
+    console.log(`\nProcessing ${totalProducts} products with desc37="${desc37Value}"`);
+    
+    // Find the first segment that matches this desc37
+    const targetSegmentGroup = segments.filter(seg => seg.name === desc37Value);
+    
+    if (targetSegmentGroup.length === 0) {
+      console.warn(`  ⚠️  No segment found with name "${desc37Value}" - skipping these products`);
+      continue;
+    }
+    
+    // Get the first segment in the target group
+    const firstTargetSegment = targetSegmentGroup[0];
+    console.log(`  → Moving to segment group "${desc37Value}" (starting at segment ${segments.indexOf(firstTargetSegment) + 1})`);
+    
+    // Get fixtures in the FIRST target segment only, sorted top to bottom
+    const targetFixtures = Array.from(firstTargetSegment.fixturesIn)
+      .filter(f => f.ftype === 0 || f.ftype === 6) // Only shelves
+      .sort((a, b) => b.position.y - a.position.y);
+    
+    if (targetFixtures.length === 0) {
+      console.warn(`  ⚠️  No fixtures found in segment "${firstTargetSegment.name}"`);
+      continue;
+    }
+    
+    // Sort fixture Y positions to process top to bottom
+    const fixtureYPositions = Object.keys(fixtureGroups)
+      .map(y => parseFloat(y))
+      .sort((a, b) => b - a); // Top to bottom
+    
+    // Match each source fixture to a target fixture by index
+    for (let fixtureIdx = 0; fixtureIdx < fixtureYPositions.length; fixtureIdx++) {
+      const sourceFixtureY = fixtureYPositions[fixtureIdx];
+      const positions = fixtureGroups[sourceFixtureY];
+      
+      // Sort positions left to right by their current rank/position
+      positions.sort((a, b) => {
+        if (REVERSE_FLOW) {
+          return b.rank.x - a.rank.x;
+        }
+        return a.rank.x - b.rank.x;
+      });
+      
+      // Get corresponding target fixture (same index)
+      const targetFixture = targetFixtures[fixtureIdx];
+      if (!targetFixture) {
+        console.warn(`  ⚠️  No target fixture at index ${fixtureIdx}`);
+        continue;
+      }
+      
+      console.log(`  Fixture ${fixtureIdx + 1}: Moving ${positions.length} products`);
+      
+      // Orphan products from this fixture
+      for (let pos of positions) {
+        pos.parent = null;
+      }
+      
+      await sleep(10);
+      
+      // Calculate rank offset based on existing products on target fixture
+      const existingPositionsOnFixture = Array.from(pog.positions).filter(p =>
+        p.parent && p.parent.fixtureLeftMost.uuid === targetFixture.fixtureLeftMost.uuid
+      );
+      const rankOffset = existingPositionsOnFixture.length > 0
+        ? Math.max(...existingPositionsOnFixture.map(p => p.rank.x))
+        : 0;
+      
+      // Place products on target fixture in order
+      for (let posIdx = 0; posIdx < positions.length; posIdx++) {
+        const pos = positions[posIdx];
+        pos.parent = targetFixture;
+        pos.rank.x = REVERSE_FLOW
+          ? rankOffset + (positions.length - posIdx)
+          : rankOffset + posIdx + 1;
+      }
+      
+      targetFixture.layoutByRank();
+      await sleep(10);
+    }
+    
+    console.log(`  ✅ Relocated ${totalProducts} products with desc37="${desc37Value}"`);
+  }
+  
+  console.log("\n===== Product Relocation Complete =====\n");
+}
+
   // // Log product locations BEFORE any changes
   // const beforeSnapshot = logAllProductLocationsByGroups(targetDoc, "BEFORE ORPHANING - Initial Product Locations");
   // targetDoc._beforeSnapshot = beforeSnapshot;
@@ -1663,39 +1782,6 @@ async function renameSegmentsWithExpansion() {
 
 copyProductData()
 await sleep(0)
-
-// Calculate average DOS by desc37 groups AFTER copying product data
-console.log("\n===== Calculating Average DOS by Desc37 Group =====");
-const avgDOSResults = calculateAvgDOSByDesc37(pog);
-console.log("Average DOS calculation complete.\n");
-
-// Determine which group needs extra segments based on DOS
-const templateSegmentCount = Array.from(templatePOG.segments).length;
-const targetSegmentCount = Array.from(pog.segments).length;
-const extraSegments = targetSegmentCount - templateSegmentCount;
-
-let groupToExpand = null;
-if (extraSegments > 0) {
-  // Find the group with lowest average DOS
-  let lowestDOS = Infinity;
-  for (let [groupName, data] of Object.entries(avgDOSResults)) {
-    if (data.avgDOS < lowestDOS) {
-      lowestDOS = data.avgDOS;
-      groupToExpand = groupName;
-    }
-  }
-  console.log(`⚠️  Target has ${extraSegments} extra segment(s).`);
-  console.log(`✅ "${groupToExpand}" has lowest DOS (${lowestDOS.toFixed(2)} days) and will receive extra segment(s).\n`);
-}
-
-// Store this for later use in naming and placement
-pog._groupToExpand = groupToExpand;
-pog._extraSegments = extraSegments;
-
-// Now RE-NAME the segments with the expansion info
-console.log("Re-naming segments with expansion logic...");
-await renameSegmentsWithExpansion();
-await sleep(100);
 
 
 // Old Find new Items from Template where their Desc37 is on the Target POG
@@ -2126,6 +2212,48 @@ await sleep(100);
 
   positionDataUpdate0()
   await sleep(200)
+
+  console.log("\n===== Calculating Average DOS by Desc37 Group =====");
+const avgDOSResults = calculateAvgDOSByDesc37(pog);
+console.log("Average DOS calculation complete.\n");
+
+// Determine which group needs extra segments
+const templateSegmentCount = Array.from(templatePOG.segments).length;
+const targetSegmentCount = Array.from(pog.segments).length;
+const extraSegments = targetSegmentCount - templateSegmentCount;
+
+let groupToExpand = null;
+if (extraSegments > 0) {
+  let lowestDOS = Infinity;
+  for (let [groupName, data] of Object.entries(avgDOSResults)) {
+    if (data.avgDOS < lowestDOS) {
+      lowestDOS = data.avgDOS;
+      groupToExpand = groupName;
+    }
+  }
+  console.log(`⚠️  Target has ${extraSegments} extra segment(s).`);
+  console.log(`✅ "${groupToExpand}" has lowest DOS (${lowestDOS.toFixed(2)} days) and will receive extra segment(s).\n`);
+}
+
+pog._groupToExpand = groupToExpand;
+pog._extraSegments = extraSegments;
+
+console.log("Re-naming segments with expansion logic...");
+await renameSegmentsWithExpansion();
+await sleep(100);
+
+// 🔥 NEW: Re-apply canCombine settings after segment renaming
+console.log("Re-applying canCombine settings after segment renaming...");
+setCanCombineBySegmentGroups();
+await sleep(100);
+
+// 🔥 NEW: Relocate products that don't match their segment names
+await relocateMismatchedProducts();
+await sleep(100);
+
+  const afterafterSnapshot = logAllProductLocationsByGroups(targetDoc, "AFTER ORPHANING - Product Locations After Placement");
+  targetDoc._afterafterSnapshot = afterafterSnapshot;
+  await sleep(500);
 
 
   function positionDataUpdate() {
