@@ -493,28 +493,28 @@ async function loadDoc(targetFileUuid) {
 //here!!
 function calculateAvgDOSByDesc37(pog) {
   console.log("\n===== Average DOS by Desc37 Group =====");
-  
+
   // Group products by desc37, tracking unique UPCs with detailed info
   const groupedByDesc37 = {};
-  
+
   for (let pos of pog.positions) {
     const desc37 = pos.product?.data?.performanceDesc?.get(37);
     if (!desc37) continue;
-    
+
     const upc = pos.product.upc;
-    
+
     // Calculate DOS using the correct formula: (capacity / movement) * 7
     const movement = pos.product.data.performanceValue?.get(1) || 0;
     const capacity = pos.planogramProduct?.calculatedFields?.capacity ||
-                     pos.capacity || 
-                     pos.product?.capacity || 0;
+      pos.capacity ||
+      pos.product?.capacity || 0;
     const dos = (movement > 0 && capacity > 0) ? (capacity / movement) * 7 : 9.0;
-    
+
     // Initialize group if needed
     if (!groupedByDesc37[desc37]) {
       groupedByDesc37[desc37] = {};
     }
-    
+
     // Only count each UPC once per group (first occurrence wins)
     // Store detailed info for verification
     if (!groupedByDesc37[desc37][upc]) {
@@ -526,25 +526,25 @@ function calculateAvgDOSByDesc37(pog) {
       };
     }
   }
-  
+
   // Calculate and display averages with detailed UPC-level logging
   const results = {};
   for (let [desc37Group, upcs] of Object.entries(groupedByDesc37)) {
     const upcList = Object.keys(upcs);
     const totalDOS = Object.values(upcs).reduce((sum, info) => sum + info.dos, 0);
     const avgDOS = upcList.length > 0 ? totalDOS / upcList.length : 0;
-    
+
     results[desc37Group] = {
       avgDOS: avgDOS,
       totalUPCs: upcList.length,
       totalDOS: totalDOS
     };
-    
-    console.log(`\n--- ${desc37Group} ---`);
+
+    console.log(`--- ${desc37Group} ---`);
     console.log(`Average DOS: ${avgDOS.toFixed(2)} days`);
     console.log(`Total UPCs: ${upcList.length}`);
- 
-  }  
+
+  }
   return results;
 }
 
@@ -560,7 +560,7 @@ function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY
   const segments = Array.from(pog.segments).sort((a, b) => a.uiX - b.uiX);
 
   if (segments.length === 0) {
-    console.log("âš ï¸ No segments found");
+    console.log("No segments found");
     return {};
   }
 
@@ -599,7 +599,6 @@ function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY
     }
   }
 
-  console.log(`\nðŸ” Found ${segmentGroups.length} groups:`);
   segmentGroups.forEach(group => {
     console.log(`   - ${group.name}: ${group.segments.length} segment(s)`);
   });
@@ -608,7 +607,7 @@ function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY
 
   // Step 3: Process each group
   segmentGroups.forEach((group, groupIndex) => {
-    console.log(`\nðŸ“¦ GROUP: ${group.name} (${group.segments.length} segment${group.segments.length > 1 ? 's' : ''})`);
+    console.log(`GROUP: ${group.name} (${group.segments.length} segment${group.segments.length > 1 ? 's' : ''})`);
 
     // Get all fixtures from ALL segments in this group, organized by Y-level
     const fixturesByY = {};
@@ -1484,7 +1483,8 @@ async function prepare(targetDoc, templateDoc) {
     console.log("Segment Counts:");
     console.log(`Template segment count: ${templateCount}`);
     console.log(`Target segment count: ${targetCount}`);
-    console.log(`Segment difference: (target - template) = ${difference}`);
+    console.log(`Segment difference = ${difference}`);
+    console.log('-------------------------------------')
 
     return { templateCount, targetCount, difference };
   }
@@ -1539,6 +1539,8 @@ async function prepare(targetDoc, templateDoc) {
     }
 
     console.log("Segment naming complete.\n");
+    console.log('-------------------------------------')
+
   }
 
   nameTargetSegmentsFromCurrentProducts();
@@ -1806,7 +1808,7 @@ async function prepare(targetDoc, templateDoc) {
       }
     }
 
-    console.log(`Found ${segmentGroups.length} segment groups:`);
+    console.log(`Setting canCombine properties for ${segmentGroups.length} segment groups:`);
     segmentGroups.forEach(group => {
       console.log(`  - ${group.name}: ${group.segments.length} segment(s)`);
     });
@@ -1832,7 +1834,7 @@ async function prepare(targetDoc, templateDoc) {
           fix.canCombine = canCombineValue;
         }
 
-        console.log(`  ${segment.name} [${index + 1}/${groupSize}] â†’ canCombine = ${canCombineValue}`);
+        console.log(`  ${segment.name} [${index + 1}/${groupSize}]  -->  canCombine = ${canCombineValue}`);
       });
     }
   }
@@ -1987,7 +1989,7 @@ async function prepare(targetDoc, templateDoc) {
 
   // Calculate average DOS by desc37 groups
   const avgDOSResults = calculateAvgDOSByDesc37(pog);
-  
+
 
   // get posits (positions that we want to optimise)
   posits = pog.positions//.filter(z => !leavePosAlone(z))
