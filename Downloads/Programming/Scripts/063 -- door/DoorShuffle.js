@@ -1464,59 +1464,6 @@ async function prepare(targetDoc, templateDoc) {
   fixs = pog.fixtures
 
   //NEWWWWWWW
-  // Logs segment counts for template and target and returns a summary object
-  function logSegmentCounts(templatePOG, targetPOG) {
-    const getCount = (segs) => {
-      if (!segs) return 0;
-      if (typeof segs.size === 'number') return segs.size;
-      if (typeof segs.length === 'number') return segs.length;
-      try { return Array.from(segs).length; } catch (e) { return 0; }
-    };
-
-    const templateCount = getCount(templatePOG?.segments);
-    const targetCount = getCount(targetPOG?.segments);
-    const difference = targetCount - templateCount;
-
-    console.log("Segment Counts:");
-    console.log(`Template segment count: ${templateCount}`);
-    console.log(`Target segment count: ${targetCount}`);
-    console.log(`Segment difference = ${difference}`);
-    console.log('-------------------------------------')
-
-    return { templateCount, targetCount, difference };
-  }
-
-// Log segment counts early for visibility
-logSegmentCounts(templatePOG, pog);
-
-// Calculate average DOS by desc37 groups BEFORE segment naming
-const avgDOSResults = calculateAvgDOSByDesc37(pog);
-console.log("Average DOS calculation complete.");
-    console.log('-------------------------------------')
-
-
-// Determine which group needs extra segments based on DOS
-const templateSegmentCount = Array.from(templatePOG.segments).length;
-const targetSegmentCount = Array.from(pog.segments).length;
-const extraSegments = targetSegmentCount - templateSegmentCount;
-
-let groupToExpand = null;
-if (extraSegments > 0) {
-  // Find the group with lowest average DOS
-  let lowestDOS = Infinity;
-  for (let [groupName, data] of Object.entries(avgDOSResults)) {
-    if (data.avgDOS < lowestDOS) {
-      lowestDOS = data.avgDOS;
-      groupToExpand = groupName;
-    }
-  }
-  console.log(`⚠️  Target has ${extraSegments} extra segment(s).`);
-  console.log(`✅ "${groupToExpand}" has lowest DOS (${lowestDOS.toFixed(2)} days) and will receive extra segment(s).\n`);
-}
-
-// Store this for later use in placeProducts
-pog._groupToExpand = groupToExpand;
-pog._extraSegments = extraSegments;
 
 
 //Name target segments based on TEMPLATE segments' names/desc37 (before orphaning)
@@ -1572,6 +1519,54 @@ function nameTargetSegmentsFromCurrentProducts() {
   nameTargetSegmentsFromCurrentProducts();
   await sleep(100);
 
+// Re-name segments after we know which group to expand
+async function renameSegmentsWithExpansion() {
+  const templateSegments = Array.from(templatePOG.segments).sort((a, b) => a.uiX - b.uiX);
+  const targetSegments = Array.from(pog.segments).sort((a, b) => a.uiX - b.uiX);
+
+  // Build a mapping of which template segments belong to which group
+  const templateSegmentGroups = [];
+  let currentGroup = null;
+  
+  for (let tSeg of templateSegments) {
+    const templateName = tSeg.name; // Already named earlier
+    
+    // Group consecutive segments with same name
+    if (!currentGroup || currentGroup.name !== templateName) {
+      currentGroup = { name: templateName, count: 1 };
+      templateSegmentGroups.push(currentGroup);
+    } else {
+      currentGroup.count++;
+    }
+  }
+
+  console.log(`  Template has ${templateSegmentGroups.length} groups:`);
+  templateSegmentGroups.forEach(g => console.log(`    - ${g.name}: ${g.count} segment(s)`));
+
+  // Now assign names to target segments, adding extra segments to the expanded group
+  let targetIndex = 0;
+  
+  for (let group of templateSegmentGroups) {
+    let segmentsForThisGroup = group.count;
+    
+    // If this is the group that should be expanded, give it extra segments
+    if (pog._groupToExpand === group.name && pog._extraSegments > 0) {
+      segmentsForThisGroup += pog._extraSegments;
+      console.log(`  ⚡ Expanding "${group.name}" from ${group.count} to ${segmentsForThisGroup} segments`);
+    }
+    
+    // Assign this group's name to the appropriate number of target segments
+    for (let i = 0; i < segmentsForThisGroup; i++) {
+      if (targetIndex < targetSegments.length) {
+        targetSegments[targetIndex].name = group.name;
+        console.log(`    Target Segment ${targetIndex + 1}: "${group.name}"`);
+        targetIndex++;
+      }
+    }
+  }
+
+  console.log("  Segment re-naming complete.\n");
+}
 
   // // Log product locations BEFORE any changes
   // const beforeSnapshot = logAllProductLocationsByGroups(targetDoc, "BEFORE ORPHANING - Initial Product Locations");
@@ -1669,8 +1664,38 @@ function nameTargetSegmentsFromCurrentProducts() {
 copyProductData()
 await sleep(0)
 
+// Calculate average DOS by desc37 groups AFTER copying product data
+console.log("\n===== Calculating Average DOS by Desc37 Group =====");
+const avgDOSResults = calculateAvgDOSByDesc37(pog);
+console.log("Average DOS calculation complete.\n");
 
-// Old Find new Items from Template where their Desc37 is on the Target POG
+// Determine which group needs extra segments based on DOS
+const templateSegmentCount = Array.from(templatePOG.segments).length;
+const targetSegmentCount = Array.from(pog.segments).length;
+const extraSegments = targetSegmentCount - templateSegmentCount;
+
+let groupToExpand = null;
+if (extraSegments > 0) {
+  // Find the group with lowest average DOS
+  let lowestDOS = Infinity;
+  for (let [groupName, data] of Object.entries(avgDOSResults)) {
+    if (data.avgDOS < lowestDOS) {
+      lowestDOS = data.avgDOS;
+      groupToExpand = groupName;
+    }
+  }
+  console.log(`⚠️  Target has ${extraSegments} extra segment(s).`);
+  console.log(`✅ "${groupToExpand}" has lowest DOS (${lowestDOS.toFixed(2)} days) and will receive extra segment(s).\n`);
+}
+
+// Store this for later use in naming and placement
+pog._groupToExpand = groupToExpand;
+pog._extraSegments = extraSegments;
+
+// Now RE-NAME the segments with the expansion info
+console.log("Re-naming segments with expansion logic...");
+await renameSegmentsWithExpansion();
+await sleep(100);
 
 
 // Old Find new Items from Template where their Desc37 is on the Target POG
