@@ -598,10 +598,7 @@ function logAllProductLocationsByGroups(targetDoc, label = "PRODUCT LOCATIONS BY
       }
     }
   }
-
-  segmentGroups.forEach(group => {
-    console.log(`   - ${group.name}: ${group.segments.length} segment(s)`);
-  });
+    console.log('-------------------------------------')
 
   const snapshot = {};
 
