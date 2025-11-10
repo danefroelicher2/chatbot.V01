@@ -1486,12 +1486,41 @@ async function prepare(targetDoc, templateDoc) {
     return { templateCount, targetCount, difference };
   }
 
-  // Log segment counts early for visibility
-  logSegmentCounts(templatePOG, pog);
+// Log segment counts early for visibility
+logSegmentCounts(templatePOG, pog);
+
+// Calculate average DOS by desc37 groups BEFORE segment naming
+const avgDOSResults = calculateAvgDOSByDesc37(pog);
+console.log("Average DOS calculation complete.");
+    console.log('-------------------------------------')
 
 
-  //Name target segments based on TEMPLATE segments' names/desc37 (before orphaning)
-  function nameTargetSegmentsFromCurrentProducts() {
+// Determine which group needs extra segments based on DOS
+const templateSegmentCount = Array.from(templatePOG.segments).length;
+const targetSegmentCount = Array.from(pog.segments).length;
+const extraSegments = targetSegmentCount - templateSegmentCount;
+
+let groupToExpand = null;
+if (extraSegments > 0) {
+  // Find the group with lowest average DOS
+  let lowestDOS = Infinity;
+  for (let [groupName, data] of Object.entries(avgDOSResults)) {
+    if (data.avgDOS < lowestDOS) {
+      lowestDOS = data.avgDOS;
+      groupToExpand = groupName;
+    }
+  }
+  console.log(`⚠️  Target has ${extraSegments} extra segment(s).`);
+  console.log(`✅ "${groupToExpand}" has lowest DOS (${lowestDOS.toFixed(2)} days) and will receive extra segment(s).\n`);
+}
+
+// Store this for later use in placeProducts
+pog._groupToExpand = groupToExpand;
+pog._extraSegments = extraSegments;
+
+
+//Name target segments based on TEMPLATE segments' names/desc37 (before orphaning)
+function nameTargetSegmentsFromCurrentProducts() {
     console.log("Naming target segments based on template desc 37 values...");
 
     const getCount = (segs) => {
@@ -1637,11 +1666,14 @@ async function prepare(targetDoc, templateDoc) {
     }
   }
 
-  copyProductData()
-  await sleep(0)
+copyProductData()
+await sleep(0)
 
 
-  // Old Find new Items from Template where their Desc37 is on the Target POG
+// Old Find new Items from Template where their Desc37 is on the Target POG
+
+
+// Old Find new Items from Template where their Desc37 is on the Target POG
   //function getNewItemsFromTemp() {
   //desc37sInTarget = posits.reduce((total, z) => {
   //desc37group = specialGet(z, dividerblocks)
@@ -1984,8 +2016,7 @@ async function prepare(targetDoc, templateDoc) {
   await waitForParent(pog)
   await waitForCalcFields(pog)
 
-  // Calculate average DOS by desc37 groups
-  const avgDOSResults = calculateAvgDOSByDesc37(pog);
+
 
 
   // get posits (positions that we want to optimise)
