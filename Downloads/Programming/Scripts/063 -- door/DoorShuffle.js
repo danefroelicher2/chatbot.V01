@@ -1573,119 +1573,108 @@ async function relocateMismatchedProducts() {
   const segments = Array.from(pog.segments).sort((a, b) => a.uiX - b.uiX);
   const allPositions = Array.from(pog.positions);
   
-  // Group mismatched products by their desc37 AND their current fixture
-  const mismatchedByDesc37 = {};
-  
+  // Find which desc37 groups have mismatches
+  const groupsWithMismatches = new Set();
   for (let pos of allPositions) {
     const productDesc37 = pos.product?.data?.performanceDesc?.get(37);
     if (!productDesc37) continue;
-    
-    const segmentName = pos.segment?.name;
-    
-    // Check if product's desc37 matches its current segment name
-    if (productDesc37 !== segmentName) {
-      if (!mismatchedByDesc37[productDesc37]) {
-        mismatchedByDesc37[productDesc37] = {};
-      }
-      
-      // Group by current fixture Y position to preserve fixture-level structure
-      const fixtureY = pos.fixture.position.y;
-      if (!mismatchedByDesc37[productDesc37][fixtureY]) {
-        mismatchedByDesc37[productDesc37][fixtureY] = [];
-      }
-      
-      mismatchedByDesc37[productDesc37][fixtureY].push(pos);
+    if (productDesc37 !== pos.segment?.name) {
+      groupsWithMismatches.add(productDesc37);
     }
   }
   
-  // Process each mismatched desc37 group
-  for (let [desc37Value, fixtureGroups] of Object.entries(mismatchedByDesc37)) {
+  if (groupsWithMismatches.size === 0) {
+    console.log("No mismatches found");
+    return;
+  }
+  
+  // Collect ALL products from those groups WITH their original uiX
+  const productsByDesc37 = {};
+  for (let pos of allPositions) {
+    const productDesc37 = pos.product?.data?.performanceDesc?.get(37);
+    if (!productDesc37 || !groupsWithMismatches.has(productDesc37)) continue;
+    
+    if (!productsByDesc37[productDesc37]) {
+      productsByDesc37[productDesc37] = {};
+    }
+    
+    const fixtureY = pos.fixture.position.y;
+    if (!productsByDesc37[productDesc37][fixtureY]) {
+      productsByDesc37[productDesc37][fixtureY] = [];
+    }
+    
+    // Store position with its current uiX BEFORE orphaning
+    productsByDesc37[productDesc37][fixtureY].push({
+      pos: pos,
+      originalX: pos.uiX
+    });
+  }
+  
+  // Process each group
+  for (let [desc37Value, fixtureGroups] of Object.entries(productsByDesc37)) {
     const totalProducts = Object.values(fixtureGroups).flat().length;
-    console.log(`\nProcessing ${totalProducts} products with desc37="${desc37Value}"`);
+    console.log(`\nRelocating ${totalProducts} products with desc37="${desc37Value}"`);
     
-    // Find the first segment that matches this desc37
-    const targetSegmentGroup = segments.filter(seg => seg.name === desc37Value);
+    const targetSegments = segments.filter(seg => seg.name === desc37Value);
+    if (targetSegments.length === 0) continue;
     
-    if (targetSegmentGroup.length === 0) {
-      console.warn(`  ⚠️  No segment found with name "${desc37Value}" - skipping these products`);
-      continue;
+    // Get all target fixtures BEFORE orphaning
+    const allFixtures = [];
+    for (let seg of targetSegments) {
+      const segFixtures = Array.from(seg.fixturesIn).filter(f => f.ftype === 0 || f.ftype === 6);
+      allFixtures.push(...segFixtures);
     }
     
-    // Get the first segment in the target group
-    const firstTargetSegment = targetSegmentGroup[0];
-    console.log(`  → Moving to segment group "${desc37Value}" (starting at segment ${segments.indexOf(firstTargetSegment) + 1})`);
-    
-    // Get fixtures in the FIRST target segment only, sorted top to bottom
-    const targetFixtures = Array.from(firstTargetSegment.fixturesIn)
-      .filter(f => f.ftype === 0 || f.ftype === 6) // Only shelves
-      .sort((a, b) => b.position.y - a.position.y);
-    
-    if (targetFixtures.length === 0) {
-      console.warn(`  ⚠️  No fixtures found in segment "${firstTargetSegment.name}"`);
-      continue;
+    // Get unique fixtures by Y position
+    const fixturesByY = {};
+    for (let fix of allFixtures) {
+      const y = fix.position.y;
+      if (!fixturesByY[y]) {
+        fixturesByY[y] = fix.fixtureLeftMost;
+      }
     }
-    
-    // Sort fixture Y positions to process top to bottom
-    const fixtureYPositions = Object.keys(fixtureGroups)
+    const uniqueFixtures = Object.keys(fixturesByY)
       .map(y => parseFloat(y))
-      .sort((a, b) => b - a); // Top to bottom
+      .sort((a, b) => b - a)
+      .map(y => fixturesByY[y]);
     
-    // Match each source fixture to a target fixture by index
-    for (let fixtureIdx = 0; fixtureIdx < fixtureYPositions.length; fixtureIdx++) {
-      const sourceFixtureY = fixtureYPositions[fixtureIdx];
-      const positions = fixtureGroups[sourceFixtureY];
+    const fixtureYs = Object.keys(fixtureGroups).map(y => parseFloat(y)).sort((a, b) => b - a);
+    
+    // Orphan all
+    for (let fixtureY of fixtureYs) {
+      for (let item of fixtureGroups[fixtureY]) {
+        item.pos.parent = null;
+      }
+    }
+    await sleep(100);
+    
+    // Place back
+    for (let fixtureIdx = 0; fixtureIdx < fixtureYs.length; fixtureIdx++) {
+      const items = fixtureGroups[fixtureYs[fixtureIdx]];
       
-      // Sort positions left to right by their current rank/position
-      positions.sort((a, b) => {
-        if (REVERSE_FLOW) {
-          return b.rank.x - a.rank.x;
-        }
-        return a.rank.x - b.rank.x;
-      });
+      // Sort by original X position
+      items.sort((a, b) => REVERSE_FLOW ? b.originalX - a.originalX : a.originalX - b.originalX);
       
-      // Get corresponding target fixture (same index)
-      const targetFixture = targetFixtures[fixtureIdx];
+      const targetFixture = uniqueFixtures[fixtureIdx];
       if (!targetFixture) {
-        console.warn(`  ⚠️  No target fixture at index ${fixtureIdx}`);
+        console.warn(`No target fixture at index ${fixtureIdx}`);
         continue;
       }
       
-      console.log(`  Fixture ${fixtureIdx + 1}: Moving ${positions.length} products`);
+      console.log(`  Fixture ${fixtureIdx + 1}: Placing ${items.length} products`);
       
-      // Orphan products from this fixture
-      for (let pos of positions) {
-        pos.parent = null;
-      }
-      
-      await sleep(10);
-      
-      // Calculate rank offset based on existing products on target fixture
-      const existingPositionsOnFixture = Array.from(pog.positions).filter(p =>
-        p.parent && p.parent.fixtureLeftMost.uuid === targetFixture.fixtureLeftMost.uuid
-      );
-      const rankOffset = existingPositionsOnFixture.length > 0
-        ? Math.max(...existingPositionsOnFixture.map(p => p.rank.x))
-        : 0;
-      
-      // Place products on target fixture in order
-      for (let posIdx = 0; posIdx < positions.length; posIdx++) {
-        const pos = positions[posIdx];
-        pos.parent = targetFixture;
-        pos.rank.x = REVERSE_FLOW
-          ? rankOffset + (positions.length - posIdx)
-          : rankOffset + posIdx + 1;
+      for (let posIdx = 0; posIdx < items.length; posIdx++) {
+        items[posIdx].pos.parent = targetFixture;
+        items[posIdx].pos.rank.x = REVERSE_FLOW ? (items.length - posIdx) : posIdx + 1;
       }
       
       targetFixture.layoutByRank();
       await sleep(10);
     }
-    
-    console.log(`  ✅ Relocated ${totalProducts} products with desc37="${desc37Value}"`);
   }
   
   console.log("\n===== Product Relocation Complete =====\n");
 }
-
   // // Log product locations BEFORE any changes
   // const beforeSnapshot = logAllProductLocationsByGroups(targetDoc, "BEFORE ORPHANING - Initial Product Locations");
   // targetDoc._beforeSnapshot = beforeSnapshot;
