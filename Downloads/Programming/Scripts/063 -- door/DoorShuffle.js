@@ -1966,8 +1966,6 @@ await sleep(0)
       });
     }
   }
-
-  setCanCombineBySegmentGroups();
   await sleep(0);
   //endnewwwwwwwwwwwwwwwww
 
